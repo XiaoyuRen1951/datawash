@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"math"
 	"os"
 	"reflect"
 	"sort"
@@ -94,7 +93,7 @@ func ReadGPUMemUsed(dir string) {
 				flag = true
 				for i:=0;i<value.Len();i++ {
 					gpumem,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
-					//tmpMax = MAX(tmpMax,gpuuti)
+					tmptask.GPU.GPUMem[k].MaxR = MAX(tmptask.GPU.GPUMem[k].MaxR,gpumem).(int64)
 					//tmpMin = MIN(tmpMin,gpuuti)
 					tmptask.GPU.GPUMem[k].History = append(tmptask.GPU.GPUMem[k].History,gpumem)
 				}
@@ -182,8 +181,68 @@ func ReadGPUMemFree(dir string) {
 	}
 }
 
-func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
-	var err error
+func ReadGPUMemmemCopyUtil(dir string) {
+	dcgm_mem_copy_utilization := ReadFile("./"+dir+"/dcgm_mem_copy_utilization.log")
+
+	for _,v := range dcgm_mem_copy_utilization.Data.Result {
+		tmptask, ok := Podmp[v.Metric.Pod_name]
+		if !ok || v.Metric.Pod_name == "" {
+			continue
+		}
+
+		value := reflect.ValueOf(v.RValue)
+		
+		flag := false
+		for k,_ := range tmptask.GPU.GPUMemCopy {
+			if v.Metric.Uuid == "" {
+				continue
+			}
+			if tmptask.GPU.GPUMemCopy[k].Uuid == v.Metric.Uuid {
+				flag = true
+				var tmpMax int64 = tmptask.GPU.GPUMemCopy[k].MaxR
+				for i:=0;i<value.Len();i++ {
+					
+					gpumemutil,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
+					tmpMax = MAX(tmpMax,gpumemutil).(int64)
+					
+					//tmpMin = MIN(tmpMin,gpuuti)
+					
+					tmptask.GPU.GPUMemCopy[k].History = append(tmptask.GPU.GPUMemCopy[k].History,gpumemutil)
+					
+				}
+				tmptask.GPU.GPUMemCopy[k].MaxR = tmpMax
+				Podmp[v.Metric.Pod_name]=tmptask
+			}
+		}
+
+		if flag {
+			continue
+		}
+
+		var tmpghis GPUHistory
+		tmpghis.Uuid = v.Metric.Uuid
+		tmpghis.Pod = v.Metric.Pod_name
+		tmpghis.MaxR = 0
+		tmpghis.History = make([]int64, 0)
+		var tmpMax int64 = 0
+		//var tmpMin int64 = INT_MAX
+
+		for i:=0;i<value.Len();i++ {
+			gpumemutil,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
+			tmpMax = MAX(tmpMax , gpumemutil).(int64)
+			//tmpMin = MIN(tmpMin,gpuuti)
+			tmpghis.History = append(tmpghis.History,gpumemutil)
+			
+		}
+		tmpghis.MaxR = tmpMax
+		//tmpgmemhis.Min=tmpMin
+		tmptask.GPU.GPUMemCopy = append(tmptask.GPU.GPUMemCopy, tmpghis)
+		Podmp[v.Metric.Pod_name]=tmptask
+
+	}
+}
+
+func ReadContainerTasksState(dir string) {
 	container_tasks_state := ReadFile("./"+dir+"/container_tasks_state.log")
 
 	for _,v := range container_tasks_state.Data.Result {
@@ -214,6 +273,93 @@ func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
 		}
 
 	}
+}
+
+func ReadDcgmGpuUtilization(dir string) {
+	dcgm_gpu_utilization := ReadFile("./"+dir+"/dcgm_gpu_utilization.log")
+
+	for _,v := range dcgm_gpu_utilization.Data.Result {
+		tmptask, ok := Podmp[v.Metric.Pod_name]
+
+		if _,ok := NodetoGPUtot[v.Metric.Name];!ok {
+			NodetoGPUtot[v.Metric.Name] = make(map[int64]int64)
+		}
+		tmpv := NodetoGPUtot[v.Metric.Name]
+		value := reflect.ValueOf(v.RValue)
+		for i:=0;i<value.Len();i++ {
+			timestamp := int64(value.Index(i).Elem().Index(0).Elem().Float())
+			if _,ok := tmpv[timestamp];ok {
+				tmpv[timestamp] = tmpv[timestamp] + 1
+			} else {
+				tmpv[timestamp] = 1
+			}
+		}
+		NodetoGPUtot[v.Metric.Name] = tmpv
+
+		if !ok {
+			continue
+		}
+
+		if _,ok := NodetoGPUuse[v.Metric.Name];!ok {
+			NodetoGPUuse[v.Metric.Name] = make(map[int64]int64)
+		}
+		tmpv = NodetoGPUuse[v.Metric.Name]
+
+		flag := false
+		for k,_ := range tmptask.GPU.GPUUtil {
+			if tmptask.GPU.GPUUtil[k].Uuid == v.Metric.Uuid {
+				flag = true
+				for i:=0;i<value.Len();i++ {
+					gpuuti,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
+					tmptask.GPU.GPUUtil[k].MaxR = MAX(tmptask.GPU.GPUUtil[k].MaxR,gpuuti).(int64)
+					//tmpMin = MIN(tmpMin,gpuuti)
+					tmptask.GPU.GPUUtil[k].History = append(tmptask.GPU.GPUUtil[k].History,gpuuti)
+
+					timestamp := int64(value.Index(i).Elem().Index(0).Elem().Float())
+					if _,ok := tmpv[timestamp];ok {
+						tmpv[timestamp] = tmpv[timestamp] + 1
+					} else {
+						tmpv[timestamp] = 1
+					}
+				}
+				NodetoGPUuse[v.Metric.Name] = tmpv
+				Podmp[v.Metric.Pod_name]=tmptask
+			}
+		}
+		if flag {
+			continue
+		}
+		var tmpgutihis GPUHistory
+		tmpgutihis.Uuid = v.Metric.Uuid
+		tmpgutihis.Pod = v.Metric.Pod_name
+		tmpgutihis.MaxR = 0
+		
+		var tmpMax int64 = 0
+		//var tmpMin int64 = INT_MAX
+		for i:=0;i<value.Len();i++ {
+			gpuuti,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
+			tmpMax = MAX(tmpMax,gpuuti).(int64)
+			//tmpMin = MIN(tmpMin,gpuuti)
+			tmpgutihis.History = append(tmpgutihis.History,gpuuti)
+
+			timestamp := int64(value.Index(i).Elem().Index(0).Elem().Float())
+			if _,ok := tmpv[timestamp];ok {
+				tmpv[timestamp] = tmpv[timestamp] + 1
+			} else {
+				tmpv[timestamp] = 1
+			}
+		}
+		NodetoGPUuse[v.Metric.Name] = tmpv
+		tmpgutihis.MaxR = tmpMax
+		//tmpgutihis.Min=tmpMin
+		tmptask.GPU.GPUUtil = append(tmptask.GPU.GPUUtil, tmpgutihis)
+
+		Podmp[v.Metric.Pod_name]=tmptask
+	}
+}
+
+func ReadPodContainerResourceLimits(dir string) (error){
+	var err error
 
 	kube_pod_container_resource_limits := ReadFile("./"+dir+"/kube_pod_container_resource_limits.log")
 
@@ -265,95 +411,10 @@ func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
 		Podmp[v.Metric.Pod]=tmptask
 	}
 
-	dcgm_gpu_utilization := ReadFile("./"+dir+"/dcgm_gpu_utilization.log")
+	return nil
+}
 
-	for _,v := range dcgm_gpu_utilization.Data.Result {
-		tmptask, ok := Podmp[v.Metric.Pod_name]
-
-		if _,ok := NodetoGPUtot[v.Metric.Name];!ok {
-			NodetoGPUtot[v.Metric.Name] = make(map[int64]int64)
-		}
-		tmpv := NodetoGPUtot[v.Metric.Name]
-		value := reflect.ValueOf(v.RValue)
-		for i:=0;i<value.Len();i++ {
-			timestamp := int64(value.Index(i).Elem().Index(0).Elem().Float())
-			if _,ok := tmpv[timestamp];ok {
-				tmpv[timestamp] = tmpv[timestamp] + 1
-			} else {
-				tmpv[timestamp] = 1
-			}
-		}
-		NodetoGPUtot[v.Metric.Name] = tmpv
-
-		if !ok {
-			continue
-		}
-
-		if _,ok := NodetoGPUuse[v.Metric.Name];!ok {
-			NodetoGPUuse[v.Metric.Name] = make(map[int64]int64)
-		}
-		tmpv = NodetoGPUuse[v.Metric.Name]
-
-		flag := false
-		for k,_ := range tmptask.GPU.GPUUtil {
-			if tmptask.GPU.GPUUtil[k].Uuid == v.Metric.Uuid {
-				flag = true
-				for i:=0;i<value.Len();i++ {
-					gpuuti,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
-					//tmpMax = MAX(tmpMax,gpuuti)
-					//tmpMin = MIN(tmpMin,gpuuti)
-					tmptask.GPU.GPUUtil[k].History = append(tmptask.GPU.GPUUtil[k].History,gpuuti)
-
-					timestamp := int64(value.Index(i).Elem().Index(0).Elem().Float())
-					if _,ok := tmpv[timestamp];ok {
-						tmpv[timestamp] = tmpv[timestamp] + 1
-					} else {
-						tmpv[timestamp] = 1
-					}
-				}
-				NodetoGPUuse[v.Metric.Name] = tmpv
-				Podmp[v.Metric.Pod_name]=tmptask
-			}
-		}
-		if flag {
-			continue
-		}
-		var tmpgutihis GPUHistory
-		tmpgutihis.Uuid = v.Metric.Uuid
-		tmpgutihis.Pod = v.Metric.Pod_name
-		tmpgutihis.MaxR = 0
-		
-		var tmpMax int64 = 0
-		//var tmpMin int64 = INT_MAX
-		for i:=0;i<value.Len();i++ {
-			gpuuti,_ := strconv.ParseInt(value.Index(i).Elem().Index(1).Elem().String(),10,64)
-			tmpMax = MAX(tmpMax,gpuuti).(int64)
-			//tmpMin = MIN(tmpMin,gpuuti)
-			tmpgutihis.History = append(tmpgutihis.History,gpuuti)
-
-			timestamp := int64(value.Index(i).Elem().Index(0).Elem().Float())
-			if _,ok := tmpv[timestamp];ok {
-				tmpv[timestamp] = tmpv[timestamp] + 1
-			} else {
-				tmpv[timestamp] = 1
-			}
-		}
-		NodetoGPUuse[v.Metric.Name] = tmpv
-		tmpgutihis.MaxR = tmpMax
-		//tmpgutihis.Min=tmpMin
-		tmptask.GPU.GPUUtil = append(tmptask.GPU.GPUUtil, tmpgutihis)
-
-		Podmp[v.Metric.Pod_name]=tmptask
-	}
-
-	// if err := ReadPodLifecycle(dir);err != nil {
-	// 	fmt.Println(err)
-	// }
-
-	ReadGPUMemUsed(dir)
-
-	ReadGPUMemFree(dir)
-
+func ReadContainerMemoryUsageBytes(dir string) {
 	container_memory_usage_bytes := ReadFile("./"+dir+"/container_memory_usage_bytes.log")
 
 	for _,v := range container_memory_usage_bytes.Data.Result {
@@ -380,6 +441,27 @@ func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
 
 		Podmp[v.Metric.Pod]=tmptask
 	}
+}
+
+func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
+	
+	ReadContainerTasksState(dir)
+
+	ReadPodContainerResourceLimits(dir)
+
+	ReadDcgmGpuUtilization(dir)
+
+	// if err := ReadPodLifecycle(dir);err != nil {
+	// 	fmt.Println(err)
+	// }
+
+	ReadGPUMemUsed(dir)
+
+	ReadGPUMemFree(dir)
+
+	ReadGPUMemmemCopyUtil(dir)
+
+	ReadContainerMemoryUsageBytes(dir)
 
 	rate_container_cpu_usage_seconds_total := ReadFile("./"+dir+"/rate(container_cpu_usage_seconds_total%5B1m%5D).log")
 
@@ -621,6 +703,30 @@ func OuttoFile(Nodeio map[string]NodeIO) {
 	}
 	gpuinfoutil.Close()
 
+	gpumemcpyutil, err := os.Create("./result/gpumemcpyutil.json")
+	if err != nil {
+		fmt.Println("GPU Memcpy util File creating error", err)
+		return
+	}
+	//gpumemcpyutil.WriteString("Podname,Uuid,Max,Min,History\n")
+	enc = json.NewEncoder(gpumemcpyutil)
+
+	for _,v := range Podmp {
+		for _,vv := range v.GPU.GPUMemCopy {
+			//gpuinfoutil.WriteString(v.Pod + "," + vv.Uuid)
+			//gpuinfoutil.WriteString(","+fmt.Sprint(vv.Max,",",vv.Min))
+			//for _, vvv := range vv.History {
+			//	gpuinfoutil.WriteString(fmt.Sprint(",",vvv))
+			//}
+			//gpuinfoutil.WriteString("\n")
+			err = enc.Encode(vv)
+			Err_Handle(err)
+		}
+
+
+	}
+	gpumemcpyutil.Close()
+
 	meminfo, err := os.Create("./result/meminfo.json")
 	if err != nil {
 		fmt.Println("Mem File creating error", err)
@@ -712,16 +818,12 @@ func OuttoFile(Nodeio map[string]NodeIO) {
 		var cpuco CPUCore
 		cpuco.Node = v.CPU.Node
 		cpuco.Pod = v.CPU.Pod
-		var cpuuti float64 = 0
+		
 		for i:=0; i<len(v.CPU.History); i++ {
 			cpuco.Utilization = append(cpuco.Utilization, v.CPU.History[i]*100/float64(v.CPU.Limit))
-			cpuuti += v.CPU.History[i]*100/float64(v.CPU.Limit)
+			
 		}
-		if leng := len(v.CPU.History); leng != 0 {
-			mpcpu[cpuco.Pod] = int64(math.Floor(cpuuti/float64(leng)))
-		} else {
-			mpcpu[cpuco.Pod] = 0
-		}
+		
 		
 		err = enc.Encode(cpuco)
 		Err_Handle(err)
@@ -851,147 +953,4 @@ func OuttoFile(Nodeio map[string]NodeIO) {
 	}
 	nodetransrate.Close()
 	
-}
-
-func Getgpucpu() {
-	tmp, err := os.Create("./result/tmp.log")
-	
-	if err != nil {
-		fmt.Println("tmp File creating error", err)
-		return
-	}
-
-	mcutil := make(map[int]int)
-	mcutig := make(map[int]int)
-	
-	for _,v := range Podmp {
-		if v.ResourceT == "debug" {
-			continue
-		}
-		if v.GPU.NumGPU != 1 {
-			continue
-		}
-
-		//filter Task Duration
-		// if v.Endtime - v.Starttime <=3600 {
-		// 	continue
-		// }
-
-		var res float64 = 0
-		for _,vv := range v.GPU.GPUUtil {
-			res += Cal_Average(vv.History)
-		}
-		res = math.Floor(res / float64(len(v.GPU.GPUUtil)))
-
-		
-		if _,ok:=mpcpu[v.Pod];ok {
-			
-			res=res-float64(mpcpu[v.Pod])
-		}
-
-		if v.Endtime - v.Starttime >=10800 {
-			mcutig[int(res)]++
-		} else {
-			mcutil[int(res)]++
-		}
-		
-	}
-	
-	sum := 0
-	for i:=-100;i<=100;i++ {
-		if _,ok:=mcutil[i];ok {
-			tmp.WriteString(fmt.Sprintf("%d ", mcutil[i]))
-			sum += mcutil[i]
-		} else {
-			tmp.WriteString(fmt.Sprintf("0 "))
-		}
-	}
-	fmt.Println(sum)
-	tmp.WriteString("\n")
-
-	sum = 0
-	for i:=-100;i<=100;i++ {
-		if _,ok:=mcutig[i];ok {
-			tmp.WriteString(fmt.Sprintf("%d ", mcutig[i]))
-			sum += mcutig[i]
-		} else {
-			tmp.WriteString(fmt.Sprintf("0 "))
-		}
-	}
-	fmt.Println(sum)
-	tmp.WriteString("\n")
-
-	tmp.Close()
-}
-
-func PrintGPUCPUUtiRange() {
-	tmp, err := os.Create("./result/tmp.log")
-	
-	if err != nil {
-		fmt.Println("tmp File creating error", err)
-		return
-	}
-
-	cpuarr := make(map[int]int)
-	for _,v := range Podmp {
-		if v.ResourceT == "debug" {
-			continue
-		}
-		if v.GPU.NumGPU != 1 {
-			if v.GPU.NumGPU >= 8 {
-				fmt.Println(v.Pod)
-			}
-			continue
-		}
-		if v.Endtime - v.Starttime <=3600 {
-			continue
-		}
-
-		var res float64 = 0
-		for _,vv := range v.GPU.GPUUtil {
-			res += Cal_Average(vv.History)
-		}
-		res = math.Floor(res / float64(len(v.GPU.GPUUtil)))
-
-		if res < 10 {
-			tmp.WriteString(v.Pod)
-			if _,ok:=mpcpu[v.Pod];ok {	
-				tmp.WriteString(fmt.Sprintf(" %d %d", int(res),mpcpu[v.Pod]))
-				if mpcpu[v.Pod] > 90 {
-					//fmt.Println(v.Pod+"        01")
-				} else if mpcpu[v.Pod] < 10 {
-					//fmt.Println(v.Pod+"        00")
-				}
-				cpuarr[int(mpcpu[v.Pod])]++
-			} else {
-				//tmp.WriteString(" 0")
-			}
-			
-			tmp.WriteString("\n")
-		} else if res > 90 {
-			if _,ok:=mpcpu[v.Pod];ok {	
-				//tmp.WriteString(fmt.Sprintf(" %d %d", int(res),mpcpu[v.Pod]))
-				if mpcpu[v.Pod] > 90 {
-					//fmt.Println(v.Pod+"        11")
-				} else if mpcpu[v.Pod] < 10 {
-					//fmt.Println(v.Pod+"        10")
-				}
-				//cpuarr[int(mpcpu[v.Pod])]++
-			} else {
-				//tmp.WriteString(" 0")
-			}
-			
-			//tmp.WriteString("\n")
-		}
-		
-	}
-	for i:=0;i<=100;i++ {
-		if _,ok := cpuarr[i];ok {
-			tmp.WriteString(fmt.Sprintf("%d ", cpuarr[i]))
-		} else {
-			tmp.WriteString("0 ")
-		}
-	}
-	tmp.WriteString("\n")
-	tmp.Close()
 }

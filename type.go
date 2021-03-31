@@ -132,6 +132,7 @@ type GPUInfo struct {
 	GPUUtil []GPUHistory	`json:"gpuutil"`
 	NumGPU int64	`json:"numgpu"`
 	GPUMem []GPUMemHistory	`json:"gpumem"`
+	GPUMemCopy []GPUHistory	`json:"gpumemcpyutil"`
 	//Ratio []GPUutilratio
 }
 
