@@ -62,7 +62,8 @@ type MetricInfo struct {
 
 type ResultInfo struct {
 	Metric MetricInfo `json:"metric"`
-	RValue []interface{} `json:"values"`
+	// RValue []interface{} `json:"values"`
+	RValue interface{} `json:"value"`
 }
 type DataInfo struct {
 	ResultType string `json:"resultType"`
@@ -120,6 +121,15 @@ type GPUHistory struct {
 	History []int64	`json:"history"`
 }
 
+type GPUPCIEHistory struct {
+	Pod string `json:"pod"`
+	Uuid string	`json:"uuid"`
+	RXMaxR float64	`json:"RXMaxR"`
+	TXMaxR float64	`json:"TXMaxR"`
+	RXHistory []float64	`json:"RXhistory"`
+	TXHistory []float64 `json:"TXhistory"`
+}
+
 /*type GPUutilratio struct {
 	Pod string `json:"pod"`
 	Uuid string	`json:"uuid"`
@@ -133,6 +143,7 @@ type GPUInfo struct {
 	NumGPU int64	`json:"numgpu"`
 	GPUMem []GPUMemHistory	`json:"gpumem"`
 	GPUMemCopy []GPUHistory	`json:"gpumemcpyutil"`
+	GPUPCIE []GPUPCIEHistory `json:"gpupcie"`
 	//Ratio []GPUutilratio
 }
 

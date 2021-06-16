@@ -78,7 +78,6 @@ func ReadPodLifecycle(dir string) error {
 func ReadGPUMemUsed(dir string) {
 	dcgm_fb_used := ReadFile("./"+dir+"/dcgm_fb_used.log")
 
-
 	for _,v := range dcgm_fb_used.Data.Result {
 		tmptask, ok := Podmp[v.Metric.Pod_name]
 		if !ok {
@@ -443,6 +442,172 @@ func ReadContainerMemoryUsageBytes(dir string) {
 	}
 }
 
+func ReadPCIERate(dir string) {
+	PCIERate := ReadFile("./"+dir+"/rate(dcgm_pcie_rx_throughput%5B1m%5D).log")
+
+	for _,v := range PCIERate.Data.Result {
+		tmptask, ok := Podmp[v.Metric.Pod_name]
+		if !ok || v.Metric.Pod_name == "" {
+			continue
+		}
+
+		value := reflect.ValueOf(v.RValue)
+		
+		flag := false
+		for k,_ := range tmptask.GPU.GPUPCIE {
+			if v.Metric.Uuid == "" {
+				continue
+			}
+			if tmptask.GPU.GPUPCIE[k].Uuid == v.Metric.Uuid {
+				flag = true
+				var tmpMax float64 = tmptask.GPU.GPUPCIE[k].RXMaxR
+				for i:=0;i<value.Len();i++ {
+					rx,_ := strconv.ParseFloat(value.Index(i).Elem().Index(1).Elem().String(),64)
+					tmpMax = MAX(tmpMax,rx).(float64)
+					
+					//tmpMin = MIN(tmpMin,gpuuti)
+					
+					tmptask.GPU.GPUPCIE[k].RXHistory = append(tmptask.GPU.GPUPCIE[k].RXHistory,rx)
+					
+				}
+				tmptask.GPU.GPUPCIE[k].RXMaxR = tmpMax
+				Podmp[v.Metric.Pod_name]=tmptask
+			}
+		}
+
+		if flag {
+			continue
+		}
+
+		var tmpghis GPUPCIEHistory
+		tmpghis.Uuid = v.Metric.Uuid
+		tmpghis.Pod = v.Metric.Pod_name
+		tmpghis.RXMaxR = 0
+		tmpghis.RXHistory = make([]float64, 0)
+		tmpghis.TXMaxR = 0
+		tmpghis.TXHistory = make([]float64, 0)
+		var tmpMax float64 = 0
+		//var tmpMin int64 = INT_MAX
+
+		for i:=0;i<value.Len();i++ {
+			rx,_ := strconv.ParseFloat(value.Index(i).Elem().Index(1).Elem().String(),64)
+			tmpMax = MAX(tmpMax , rx).(float64)
+			//tmpMin = MIN(tmpMin,gpuuti)
+			tmpghis.RXHistory = append(tmpghis.RXHistory,rx)
+			
+		}
+		tmpghis.RXMaxR = tmpMax
+		//tmpgmemhis.Min=tmpMin
+		tmptask.GPU.GPUPCIE = append(tmptask.GPU.GPUPCIE, tmpghis)
+		Podmp[v.Metric.Pod_name]=tmptask
+	}
+
+	PCIERate = ReadFile("./"+dir+"/rate(dcgm_pcie_tx_throughput%5B1m%5D).log")
+
+	for _,v := range PCIERate.Data.Result {
+		tmptask, ok := Podmp[v.Metric.Pod_name]
+		if !ok || v.Metric.Pod_name == "" {
+			continue
+		}
+
+		value := reflect.ValueOf(v.RValue)
+		
+		flag := false
+		for k,_ := range tmptask.GPU.GPUPCIE {
+			if v.Metric.Uuid == "" {
+				continue
+			}
+			if tmptask.GPU.GPUPCIE[k].Uuid == v.Metric.Uuid {
+				flag = true
+				var tmpMax float64 = tmptask.GPU.GPUPCIE[k].TXMaxR
+				for i:=0;i<value.Len();i++ {
+					tx,_ := strconv.ParseFloat(value.Index(i).Elem().Index(1).Elem().String(),64)
+					tmpMax = MAX(tmpMax,tx).(float64)
+					
+					//tmpMin = MIN(tmpMin,gpuuti)
+					
+					tmptask.GPU.GPUPCIE[k].TXHistory = append(tmptask.GPU.GPUPCIE[k].TXHistory,tx)
+					
+				}
+				tmptask.GPU.GPUPCIE[k].TXMaxR = tmpMax
+				Podmp[v.Metric.Pod_name]=tmptask
+			}
+		}
+
+		if flag {
+			continue
+		}
+
+		var tmpghis GPUPCIEHistory
+		tmpghis.Uuid = v.Metric.Uuid
+		tmpghis.Pod = v.Metric.Pod_name
+		tmpghis.RXMaxR = 0
+		tmpghis.RXHistory = make([]float64, 0)
+		tmpghis.TXMaxR = 0
+		tmpghis.TXHistory = make([]float64, 0)
+		var tmpMax float64 = 0
+		//var tmpMin int64 = INT_MAX
+
+		for i:=0;i<value.Len();i++ {
+			tx,_ := strconv.ParseFloat(value.Index(i).Elem().Index(1).Elem().String(),64)
+			tmpMax = MAX(tmpMax , tx).(float64)
+			//tmpMin = MIN(tmpMin,gpuuti)
+			tmpghis.TXHistory = append(tmpghis.TXHistory,tx)
+			
+		}
+		tmpghis.TXMaxR = tmpMax
+		//tmpgmemhis.Min=tmpMin
+		tmptask.GPU.GPUPCIE = append(tmptask.GPU.GPUPCIE, tmpghis)
+		Podmp[v.Metric.Pod_name]=tmptask
+	}
+}
+
+func ReadMachineMemory() {
+	machine_memory := ReadFile("./machine_memory")
+	ttmp, err := os.Create("./nodelist")
+	if err != nil {
+		fmt.Println("node File creating error", err)
+		return
+	}
+	record := make(map[int64]int)
+	for _,v := range machine_memory.Data.Result {
+		
+
+		value := reflect.ValueOf(v.RValue)
+
+		mem,_ := strconv.ParseInt(value.Index(1).Elem().String(),10,64)
+		
+		memgb := Decimal(float64(mem) /1024 /1024/1024)
+		//fmt.Println(v.Metric.Kbiohost+fmt.Sprintf("  %v", memgb))
+		ttmp.WriteString(v.Metric.Kbiohost+"\n")
+		record[int64(memgb)]++
+
+	}
+	ttmp.Close()
+	for k, v := range record {
+		fmt.Println(fmt.Sprintf("%v %v", k, v))
+	}
+}
+
+func ReadGPUTemp() {
+	gpu_temp := ReadFile("./gputemp")
+	
+	record := make(map[string]int)
+	rec := make(map[int]int)
+	for _,v := range gpu_temp.Data.Result {
+		
+		record[v.Metric.Name]++
+
+	}
+	
+	for _, v := range record {
+		rec[v] ++
+	}
+	for k, v := range rec {
+		fmt.Println(fmt.Sprintf("%v %v", k, v))
+	}
+}
+
 func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
 	
 	ReadContainerTasksState(dir)
@@ -462,6 +627,8 @@ func Deal_Oneday_data( dir string, Nodeio map[string]NodeIO) (error) {
 	ReadGPUMemmemCopyUtil(dir)
 
 	ReadContainerMemoryUsageBytes(dir)
+
+	ReadPCIERate(dir)
 
 	rate_container_cpu_usage_seconds_total := ReadFile("./"+dir+"/rate(container_cpu_usage_seconds_total%5B1m%5D).log")
 
@@ -722,10 +889,31 @@ func OuttoFile(Nodeio map[string]NodeIO) {
 			err = enc.Encode(vv)
 			Err_Handle(err)
 		}
-
-
 	}
 	gpumemcpyutil.Close()
+
+	pcie, err := os.Create("./result/pcie.json")
+	if err != nil {
+		fmt.Println("PCIE File creating error", err)
+		return
+	}
+	//gpumemcpyutil.WriteString("Podname,Uuid,Max,Min,History\n")
+	enc = json.NewEncoder(pcie)
+
+	for _,v := range Podmp {
+		for _,vv := range v.GPU.GPUPCIE {
+			//gpuinfoutil.WriteString(v.Pod + "," + vv.Uuid)
+			//gpuinfoutil.WriteString(","+fmt.Sprint(vv.Max,",",vv.Min))
+			//for _, vvv := range vv.History {
+			//	gpuinfoutil.WriteString(fmt.Sprint(",",vvv))
+			//}
+			//gpuinfoutil.WriteString("\n")
+			err = enc.Encode(vv)
+			Err_Handle(err)
+		}
+
+	}
+	pcie.Close()
 
 	meminfo, err := os.Create("./result/meminfo.json")
 	if err != nil {
@@ -782,6 +970,7 @@ func OuttoFile(Nodeio map[string]NodeIO) {
 	}
 	nodegpuinfo.Close()
 
+	//gpuspin
 	nodegpuuse, err := os.Create("./result/nodegpuuse.csv")
 	if err != nil {
 		fmt.Println("nodegpuuse File creating error", err)

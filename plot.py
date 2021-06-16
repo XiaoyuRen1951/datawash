@@ -3,7 +3,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import json
 
-podname = "dfec999007fe7011eb0ad0e08110ed4eba5f-yangzh321-0"
+podname = "fc5337300611d011eb0ba6f0170b270103ea-zhuk249-0-0-0"
 
 def plotcpu():
     file = open("./result/cpuinfo.json", 'r', encoding='utf-8')
@@ -51,7 +51,116 @@ def plotpodgpu():
         poduuidmem[dic['pod']] = uuid
 
     for pod in poduuidmem:
-        gpucnt = len(poduuidmem[pod])
+        # gpucnt = len(poduuidmem[pod])
+        # cnt = 0
+        # col = 1
+        # row = 1
+        # if gpucnt == 1:
+        #     row = 1
+        # elif gpucnt <= 2 :
+        #     row = 2
+        # elif gpucnt <= 4 :
+        #     col = 2
+        #     row = 2
+        # elif gpucnt <= 8 :
+        #     col = 4
+        #     row = 2
+        # elif gpucnt >= 16:
+        #     row = 4
+        #     col = gpucnt / 4
+        if pod != podname:
+            continue
+        
+        no = 0
+        plt.xlabel("Time/min")
+        #plt.ylabel("GPU Memory/MB")
+        plt.ylabel("GPU Utilization/%")
+        for uuid in poduuidmem[pod]:
+            no = no + 1
+            ls = ""
+            if no == 1 :
+                ls="-"
+            elif no == 2:
+                ls="--"
+            elif no == 3:
+                ls="-."
+            else :
+                ls =":"
+            val1 = poduuidmem.get(pod,{}).get(uuid,{})
+            #val2 = poduuiduti.get(pod,{}).get(uuid,{})
+            length = len(val1) if len(val1) !=0 else 1
+            #length = len(val2) if len(val2) !=0 else 1
+            x = np.arange(0,float(length)*0.5,0.5)
+            plt.plot(x,val1,linestyle=ls,label="GPU "+str(no))
+            #plt.plot(x,val2,linestyle=ls,label="GPU "+str(no))
+
+            
+            
+        # _, axes = plt.subplots(row,col,squeeze=False)
+        # #plt.title(pod)
+        # print(pod)
+        # no = 0
+        # for uuid in poduuidmem[pod]:
+        #     no = no + 1
+        #     idxx=int(cnt/col)
+        #     idxy=int(cnt%col)
+        #     ax = axes[idxx][idxy]
+        #     #ax.set_title(uuid)
+        #     ax.set_xlabel('Time/min')
+            # ax.set_ylabel('GPU Mem/MB')
+            # #ax.set_ylim(bottom=0)
+            # val1 = poduuidmem.get(pod,{}).get(uuid,{})
+            # length = len(val1) if len(val1) !=0 else 1
+            # x = np.arange(0,float(length)*0.5,0.5)
+            # lns1=ax.plot(x,val1,c='r',label="GPU Mem")
+        #     #lns1=ax.plot(x,val1,c='r',label="GPU Mem")
+
+        #     ax2=ax.twinx()
+        #     ax2.set_ylabel('GPU Util/%')
+        #     if no != 1 :
+        #         ax2.set_ylim(bottom=0)
+        #     val2 = poduuiduti.get(pod,{}).get(uuid,{})
+
+        #     lns2=ax2.plot(x,val2,c='g', label="GPU Util")
+        #     #lns2=ax2.plot(x,val2,c='g')
+            
+        #     lns=lns1+lns2
+        #     if no == 4 :
+        #         plt.legend(lns,["GPU Mem","GPU Util"],loc="lower right")
+        #     cnt = cnt+1
+        #plt.suptitle(pod)
+        
+        plt.tight_layout()
+        #plt.savefig("./gpu-"+pod+'.jpg')
+        plt.legend(loc = "center right")
+        plt.show()
+        plt.close()
+    file.close()
+
+def plotpodgpupcie():
+    file = open("./result/pcie.json", 'r', encoding='utf-8')
+    poduuidrx = {}
+    poduuidtx = {}
+    for line in file.readlines():
+        dic = json.loads(line)
+        val = dic['RXhistory']
+        if val == None:
+            val = []
+        uuid = poduuidrx.get(dic['pod'],{})
+        uuid[dic['uuid']]=val
+        poduuidrx[dic['pod']] = uuid
+
+        val = dic['TXhistory']
+        if val == None:
+            val = []
+        uuid = poduuidtx.get(dic['pod'],{})
+        uuid[dic['uuid']]=val
+        poduuidtx[dic['pod']] = uuid
+    file.close()
+
+
+    for pod in poduuidrx:
+        gpucnt = len(poduuidrx[pod])
         cnt = 0
         col = 1
         row = 1
@@ -73,35 +182,35 @@ def plotpodgpu():
         _, axes = plt.subplots(row,col,squeeze=False)
         plt.title(pod)
         print(pod)
-        for uuid in poduuidmem[pod]:
+        for uuid in poduuidrx[pod]:
             idxx=int(cnt/col)
             idxy=int(cnt%col)
             ax = axes[idxx][idxy]
             ax.set_title(uuid)
             ax.set_xlabel('Time/min')
-            ax.set_ylabel('GPU Mem/MB')
+            ax.set_ylabel('GPU RX PCIE/KB')
             #ax.set_ylim(bottom=0)
-            val1 = poduuidmem.get(pod,{}).get(uuid,{})
+            val1 = poduuidrx.get(pod,{}).get(uuid,{})
             length = len(val1) if len(val1) !=0 else 1
             x = np.arange(0,float(length)*0.5,0.5)
-            lns1=ax.plot(x[:300],val1[:300],c='r',label="GPU Mem")
+            lns1=ax.plot(x[:300],val1[:300],c='r',label="GPU RX PCIE")
             #lns1=ax.plot(x,val1,c='r',label="GPU Mem")
 
             ax2=ax.twinx()
-            ax2.set_ylabel('GPU Util/%')
+            ax2.set_ylabel('GPU TX PCIE/KB')
             #ax2.set_ylim(bottom=0)
-            val2 = poduuiduti.get(pod,{}).get(uuid,{})
+            val2 = poduuidtx.get(pod,{}).get(uuid,{})
 
             lns2=ax2.plot(x[:300],val2[:300],c='g')
             #lns2=ax2.plot(x,val2,c='g')
             
             lns=lns1+lns2
-            plt.legend(lns,["GPU Mem","GPU Util"],loc=0)
+            plt.legend(lns,["GPU RX PCIE","GPU TX PCIE"],loc=0)
             cnt = cnt+1
         plt.suptitle(pod)
         
         plt.tight_layout()
-        plt.savefig("./gpu-"+pod+'.jpg')
+        plt.savefig("./pcie-"+pod+'.jpg')
         #plt.show()
         plt.close()
     file.close()
@@ -312,8 +421,9 @@ def cdf():
 def main():
     # plotcpu()
     plotpodgpu()
-    plotmem()
-    plotnodecpu()
+    # plotmem()
+    # plotnodecpu()
+    # plotpodgpupcie()
     # plotnodegpu()
     # plotIO()
     # plotIBIO()
@@ -321,3 +431,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
