@@ -62,8 +62,8 @@ type MetricInfo struct {
 
 type ResultInfo struct {
 	Metric MetricInfo `json:"metric"`
-	// RValue []interface{} `json:"values"`
-	RValue interface{} `json:"value"`
+	RValue []interface{} `json:"values"`
+	// RValue interface{} `json:"value"`
 }
 type DataInfo struct {
 	ResultType string `json:"resultType"`
